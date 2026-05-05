@@ -1,9 +1,5 @@
-import os
-import logging
 import base64
 import json
-import asyncio
-from pathlib import Path
 
 from telegram import (
     Update, InlineKeyboardButton, InlineKeyboardMarkup, WebAppInfo
@@ -12,97 +8,14 @@ from telegram.ext import (
     Application, CommandHandler, MessageHandler,
     filters, ContextTypes
 )
-import openai
 import httpx
 
-# ── Logging ──────────────────────────────────────────────────────────────────
-logging.basicConfig(
-    format="%(asctime)s | %(levelname)s | %(name)s | %(message)s",
-    level=logging.INFO,
-)
-logger = logging.getLogger(__name__)
+from config import MINI_APP_URL, TELEGRAM_TOKEN
+from logger import logger
+from utils import solve_text, solve_image, transcribe_voice
 
-# ── Config ────────────────────────────────────────────────────────────────────
-TELEGRAM_TOKEN = os.environ["TELEGRAM_BOT_TOKEN"]
-OPENAI_API_KEY = os.environ["OPENAI_API_KEY"]
-MINI_APP_URL   = os.environ["MINI_APP_URL"]   # e.g. https://yourdomain.com/miniapp/
-
-openai_client = openai.AsyncOpenAI(api_key=OPENAI_API_KEY)
-
-# ── System prompt ─────────────────────────────────────────────────────────────
-SYSTEM_PROMPT = """Ты — умный помощник по домашним заданиям (ГДЗ).
-Твоя задача — дать ПОЛНОЕ и ПОНЯТНОЕ решение задачи.
-
-Правила форматирования ответа (строго!):
-1. Верни ТОЛЬКО валидный JSON без markdown-обёртки.
-2. Структура JSON:
-{
-  "subject": "Название предмета (Математика / Физика / Химия / и т.д.)",
-  "title": "Краткое описание задачи (1 строка)",
-  "steps": [
-    {"n": 1, "text": "Шаг 1 с объяснением", "formula": "LaTeX формула если нужна или null"},
-    ...
-  ],
-  "answer": "Финальный ответ",
-  "hint": "Краткая подсказка / совет для запоминания"
-}
-3. Формулы пиши в LaTeX без $$ — просто выражение, например: x = \\frac{-b}{2a}
-4. Если задача не из учёбы — верни {"error": "Это не похоже на учебное задание."}
-"""
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
-
-async def solve_text(text: str) -> dict:
-    """Send text task to GPT-4o and return parsed JSON solution."""
-    resp = await openai_client.chat.completions.create(
-        model="gpt-4o",
-        response_format={"type": "json_object"},
-        messages=[
-            {"role": "system", "content": SYSTEM_PROMPT},
-            {"role": "user", "content": text},
-        ],
-        max_tokens=2000,
-    )
-    return json.loads(resp.choices[0].message.content)
-
-
-async def solve_image(image_bytes: bytes, mime: str = "image/jpeg") -> dict:
-    """Send image to GPT-4o Vision."""
-    b64 = base64.b64encode(image_bytes).decode()
-    resp = await openai_client.chat.completions.create(
-        model="gpt-4o",
-        response_format={"type": "json_object"},
-        messages=[
-            {"role": "system", "content": SYSTEM_PROMPT},
-            {
-                "role": "user",
-                "content": [
-                    {
-                        "type": "image_url",
-                        "image_url": {"url": f"data:{mime};base64,{b64}"},
-                    },
-                    {"type": "text", "text": "Реши задачу с фото."},
-                ],
-            },
-        ],
-        max_tokens=2000,
-    )
-    return json.loads(resp.choices[0].message.content)
-
-
-async def transcribe_voice(ogg_bytes: bytes) -> str:
-    """Transcribe Telegram voice message (ogg/opus) via Whisper."""
-    import io
-    audio_file = io.BytesIO(ogg_bytes)
-    audio_file.name = "voice.ogg"
-    transcript = await openai_client.audio.transcriptions.create(
-        model="whisper-1",
-        file=audio_file,
-        language="ru",
-    )
-    return transcript.text
-
-
 def make_webapp_button(solution: dict) -> InlineKeyboardMarkup:
     """Create 'Открыть решение' button with solution data encoded in URL."""
     # Pass data as URL fragment so it never hits the server
