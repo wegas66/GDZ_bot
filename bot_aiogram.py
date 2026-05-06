@@ -25,8 +25,13 @@ def make_webapp_button(solution: dict) -> InlineKeyboardMarkup:
     ).decode()
     url = f"{MINI_APP_URL}?data={payload}"
     return InlineKeyboardMarkup(
-        [[InlineKeyboardButton("📖 Открыть решение", web_app=WebAppInfo(url=url))]]
-    )
+            inline_keyboard=[[
+                InlineKeyboardButton(
+                    text="📖 Открыть решение",
+                    web_app=WebAppInfo(url=url)
+                )
+            ]]
+        )
 
 @dp.message(Command("start"))
 async def command_start_handler(message: Message) -> None:
@@ -62,9 +67,8 @@ async def handle_photo(message: Message, bot: Bot):
     try:
         photo = message.photo[-1]
         file = await bot.get_file(photo.file_id)
-        async with httpx.AsyncClient() as client:
-            r = await client.get(file.file_path)
-        image_bytes = r.content
+        file_bytes = await bot.download_file(file.file_path)
+        image_bytes = file_bytes.read()
 
         await msg.edit_text("⏳ Решаю задачу с фото…")
         solution = await solve_image(image_bytes)
@@ -87,9 +91,8 @@ async def handle_voice(message: Message, bot: Bot):
     try:
         voice = message.voice
         file = await bot.get_file(voice.file_id)
-        async with httpx.AsyncClient() as client:
-            r = await client.get(file.file_path)
-        ogg_bytes = r.content
+        file_bytes = await bot.download_file(file.file_path)
+        ogg_bytes = file_bytes.read()
 
         text = await transcribe_voice(ogg_bytes)
         await msg.edit_text(f"🗣 Распознано: _{text}_\n\n⏳ Решаю…")
@@ -115,9 +118,9 @@ async def handle_document(message: Message, bot: Bot):
         msg = await processing_message(message, "📄 Читаю файл…")
         try:
             file = await bot.get_file(doc.file_id)
-            async with httpx.AsyncClient() as client:
-                r = await client.get(file.file_path)
-            solution = await solve_image(r.content, mime=doc.mime_type)
+            file_bytes = await bot.download_file(file.file_path)
+            doc_bytes = file_bytes.read()
+            solution = await solve_image(doc_bytes, mime=doc.mime_type)
             if "error" in solution:
                 await msg.edit_text(f"❌ {solution['error']}")
                 return

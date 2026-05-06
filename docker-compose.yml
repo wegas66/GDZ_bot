@@ -4,12 +4,12 @@ services:
   bot:
     build: .
     restart: unless-stopped
-    environment:
-      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN}
-      OPENAI_API_KEY: ${OPENAI_API_KEY}
-      MINI_APP_URL: ${MINI_APP_URL}          # e.g. https://yourdomain.com/
+    env_file:
+      - .env
     networks:
       - gdznet
+    volumes:
+      - ./:/app
 
   miniapp:
     image: nginx:alpine
